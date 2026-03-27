@@ -35,7 +35,6 @@
       margin: 0;
       padding: 0;
       width: 100%;
-      overflow-x: clip;
     }
     body {
       margin: 0;
@@ -47,18 +46,14 @@
       line-height: var(--lh-body);
       background: var(--bg);
       color: var(--text);
-      overflow-x: clip;
     }
     .container {
-      /* 用视口中心定位，确保模块边框与页面中线对齐 */
+      /* 标准块级居中：避免 transform + overflow 组合导致右侧被裁切、视觉偏右 */
       --page-max: 1320px;
       --page-gutter: 16px;
       max-width: var(--page-max);
       width: 100%;
-      position: relative;
-      left: 50%;
-      transform: translateX(-50%);
-      margin: 20px 0 40px;
+      margin: 20px auto 40px;
       padding-inline: var(--page-gutter);
       box-sizing: border-box;
     }
@@ -89,12 +84,16 @@
       display: grid;
       grid-template-columns: 1fr;
       gap: 14px;
+      width: 100%;
+      min-width: 0;
     }
     .card {
       background: var(--card);
       border: 1px solid var(--line);
       border-radius: 12px;
       padding: 14px;
+      min-width: 0;
+      max-width: 100%;
     }
     .card h2 {
       margin: 0 0 10px;
@@ -424,13 +423,15 @@
     .quota-focus h2 { margin-bottom: 12px; }
     .quota-card-grid {
       display: grid;
-      grid-template-columns: repeat(4, minmax(0, 252px));
+      width: 100%;
+      min-width: 0;
+      /* 列随容器伸缩，避免固定像素总宽 > 视口导致右侧被挤出/裁切 */
+      grid-template-columns: repeat(4, minmax(0, 1fr));
       gap: 18px;
-      justify-content: center;
       justify-items: stretch;
     }
     @media (max-width: 1180px) {
-      .quota-card-grid { grid-template-columns: repeat(2, minmax(0, 300px)); }
+      .quota-card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
     @media (max-width: 680px) {
       .quota-card-grid { grid-template-columns: minmax(0, 1fr); }
