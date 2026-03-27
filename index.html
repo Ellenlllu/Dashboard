@@ -1,0 +1,2024 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI 用量与成本 Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg: #f6f8fc;
+      --card: #ffffff;
+      --text: #1f2937;
+      --muted: #6b7280;
+      --line: #e5e7eb;
+      --brand: #2563eb;
+      --ok: #059669;
+      --warn: #d97706;
+      --danger: #dc2626;
+      /* 字号：14px 正文，标题按约 1.3 / 1.7 倍递进 */
+      --fs-body: 14px;
+      --fs-h1: 24px;
+      --fs-h2: 18px;
+      --fs-secondary: 13px;
+      --fs-caption: 12px;
+      --fs-kpi-value: 19px;
+      --lh-body: 1.5;
+      --lh-tight: 1.35;
+    }
+    * { box-sizing: border-box; }
+    /*
+      整页居中对齐：以视口为参照对称留白。
+      避免 flex 子项宽度百分比、scrollbar-gutter 等在部分环境下与视口中心不一致。
+    */
+    html {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      overflow-x: clip;
+    }
+    body {
+      margin: 0;
+      padding: 0;
+      min-height: 100vh;
+      width: 100%;
+      font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      font-size: var(--fs-body);
+      line-height: var(--lh-body);
+      background: var(--bg);
+      color: var(--text);
+      overflow-x: clip;
+    }
+    .container {
+      /* 用视口中心定位，确保模块边框与页面中线对齐 */
+      --page-max: 1320px;
+      --page-gutter: 16px;
+      max-width: var(--page-max);
+      width: 100%;
+      position: relative;
+      left: 50%;
+      transform: translateX(-50%);
+      margin: 20px 0 40px;
+      padding-inline: var(--page-gutter);
+      box-sizing: border-box;
+    }
+    .header {
+      margin-bottom: 16px;
+    }
+    .title {
+      margin: 0;
+      font-size: var(--fs-h1);
+      line-height: var(--lh-tight);
+      font-weight: 600;
+    }
+    .subtitle { margin: 6px 0 0; color: var(--muted); font-size: var(--fs-secondary); line-height: var(--lh-body); }
+    .btn {
+      border: 1px solid var(--line);
+      background: #fff;
+      border-radius: 8px;
+      padding: 8px 12px;
+      cursor: pointer;
+      font-size: var(--fs-body);
+    }
+    .btn.primary {
+      background: var(--brand);
+      border-color: var(--brand);
+      color: #fff;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 14px;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 14px;
+    }
+    .card h2 {
+      margin: 0 0 10px;
+      font-size: var(--fs-h2);
+      line-height: var(--lh-tight);
+      font-weight: 600;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+    .usage-filters { display: flex; flex-direction: column; gap: 8px; }
+    .usage-filters-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-start; }
+    .filter-col { display: flex; flex-direction: column; gap: 6px; min-width: 220px; }
+    .equal-width { flex: 1 1 320px; min-width: 320px; }
+    .filter-label { font-size: var(--fs-caption); color: var(--muted); line-height: var(--lh-body); }
+    select, input[type="text"] {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 7px 10px;
+      font-size: var(--fs-body);
+      min-width: 140px;
+      background: #fff;
+    }
+    .table-wrap { overflow: auto; border: 1px solid var(--line); border-radius: 10px; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: #fff;
+      font-size: var(--fs-body);
+    }
+    th, td {
+      border-bottom: 1px solid var(--line);
+      padding: 8px 10px;
+      text-align: left;
+      white-space: nowrap;
+    }
+    th.sortable { cursor: pointer; user-select: none; }
+    th.sortable:hover { background: #f3f4f6; }
+    tr.warn td { background: #fff7ed; }
+    tr.danger td { background: #fef2f2; }
+    .kpis {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+    .kpi {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 10px;
+      background: #fafafa;
+    }
+    .kpi .label { color: var(--muted); font-size: var(--fs-caption); line-height: var(--lh-body); }
+    .kpi .value { font-size: var(--fs-kpi-value); font-weight: 700; margin-top: 4px; line-height: var(--lh-tight); }
+    select[multiple] {
+      min-width: 200px;
+      min-height: 90px;
+    }
+    .range-wrap { position: relative; }
+    .range-panel {
+      position: absolute;
+      top: 42px;
+      left: 0;
+      z-index: 20;
+      width: 360px;
+      border: 1px solid var(--line);
+      background: #fff;
+      border-radius: 10px;
+      padding: 10px;
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.08);
+      display: none;
+    }
+    .range-panel.open { display: block; }
+    .range-actions { display: flex; gap: 8px; margin-top: 8px; }
+    .segmented {
+      display: inline-flex;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+      background: #fff;
+    }
+    .segmented label { cursor: pointer; padding: 7px 10px; font-size: var(--fs-secondary); border-right: 1px solid var(--line); }
+    .segmented label:last-child { border-right: none; }
+    .segmented input { display: none; }
+    .segmented input:checked + span { color: #fff; background: var(--brand); border-radius: 6px; padding: 2px 6px; }
+    .multi-box details {
+      border: 1px solid #dbe2ea;
+      border-radius: 14px;
+      background: #fff;
+      padding: 0;
+      box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+    }
+    .multi-box summary {
+      cursor: pointer;
+      font-size: var(--fs-body);
+      color: #334155;
+      font-weight: 500;
+      list-style: none;
+      padding: 10px 12px;
+      margin: 0;
+    }
+    .multi-box summary::-webkit-details-marker { display: none; }
+    .multi-select-summary-inner {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      width: 100%;
+      min-width: 0;
+    }
+    .multi-select-summary-text {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-weight: 500;
+      line-height: 1.35;
+    }
+    .multi-select-summary-text.placeholder {
+      color: var(--muted);
+      font-weight: 400;
+    }
+    .multi-select-summary-badge {
+      flex-shrink: 0;
+      font-size: var(--fs-caption);
+      font-weight: 600;
+      color: #1d4ed8;
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      padding: 2px 8px;
+      border-radius: 999px;
+      line-height: 1.2;
+    }
+    .multi-box details .range-actions,
+    .multi-box details .option-list {
+      margin-left: 12px;
+      margin-right: 12px;
+    }
+    .multi-box details #productSearch {
+      margin-top: 8px;
+      margin-left: 12px;
+      margin-right: 12px;
+      width: calc(100% - 24px);
+      box-sizing: border-box;
+    }
+    .multi-box details .option-list {
+      margin-bottom: 8px;
+    }
+    .option-list {
+      max-height: 220px;
+      overflow: auto;
+      border-top: 1px solid #eef2f7;
+      margin-top: 8px;
+      padding-top: 8px;
+      display: grid;
+      gap: 6px;
+    }
+    .option-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: var(--fs-body);
+      min-height: 36px;
+      padding: 8px 10px;
+      border-radius: 20px;
+      border: 1px solid transparent;
+      cursor: pointer;
+      user-select: none;
+      transition: all .12s ease;
+      background: transparent;
+    }
+    .option-item:hover {
+      background: #f6f8fb;
+      border-color: #e6ebf2;
+    }
+    .option-item.selected {
+      background: #eef4ff;
+      border-color: #bfd5ff;
+    }
+    .option-item:focus-within {
+      outline: 2px solid #6b97ff;
+      outline-offset: 1px;
+    }
+    .option-item input {
+      position: absolute;
+      opacity: 0;
+      pointer-events: none;
+    }
+    .option-check {
+      width: 18px;
+      height: 18px;
+      border-radius: 5px;
+      border: 1.5px solid #cbd5e1;
+      background: #fff;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: var(--fs-caption);
+      color: #1d4ed8;
+      transition: all .12s ease;
+      flex: none;
+    }
+    .option-item.selected .option-check {
+      border-color: #6b97ff;
+      background: #e8f0ff;
+    }
+    .option-label {
+      color: #1f2937;
+      font-variation-settings: "wght" 450;
+    }
+    .status-badge {
+      border-radius: 999px;
+      padding: 2px 8px;
+      font-size: var(--fs-caption);
+      border: 1px solid var(--line);
+      background: #f9fafb;
+    }
+    .status-pending { color: var(--warn); border-color: #fbbf24; background: #fffbeb; }
+    .status-pass { color: var(--ok); border-color: #86efac; background: #ecfdf5; }
+    .status-progress { color: var(--brand); border-color: #93c5fd; background: #eff6ff; }
+    .small { color: var(--muted); font-size: var(--fs-secondary); }
+    .card h2.card-heading-with-action {
+      align-items: flex-start;
+    }
+    .card h2.card-heading-with-action .card-heading-action {
+      flex-shrink: 0;
+      margin-left: auto;
+      margin-top: 0;
+      font-size: var(--fs-body);
+      padding: 6px 12px;
+      border-radius: 8px;
+      transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+    .card h2.card-heading-with-action .card-heading-action:hover {
+      border-color: #cbd5e1;
+      background: #f9fafb;
+      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+    }
+    .card h2.card-heading-with-action .card-heading-action:active {
+      background: #f3f4f6;
+    }
+    .usage-presentation-row {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 10px;
+      margin-top: 10px;
+      margin-bottom: 8px;
+    }
+    .usage-presentation-main {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 12px;
+      row-gap: 8px;
+    }
+    .usage-view-toggle.segmented {
+      flex-shrink: 0;
+    }
+    .usage-subteam-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+      flex-wrap: nowrap;
+      max-width: 100%;
+      font-size: var(--fs-body);
+      color: var(--text);
+      cursor: pointer;
+      user-select: none;
+    }
+    .usage-subteam-toggle input {
+      cursor: pointer;
+      width: 15px;
+      height: 15px;
+      accent-color: var(--brand);
+    }
+    .usage-tree-cell {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .usage-tree-toggle {
+      flex-shrink: 0;
+      border: none;
+      background: transparent;
+      cursor: pointer;
+      padding: 2px 4px;
+      font-size: 11px;
+      line-height: 1;
+      color: var(--muted);
+      border-radius: 4px;
+    }
+    .usage-tree-toggle:hover {
+      color: var(--text);
+      background: #f3f4f6;
+    }
+    .usage-tree-indent {
+      display: inline-block;
+      padding-left: 1.6rem;
+    }
+    .usage-col-project--sub {
+      color: var(--muted);
+    }
+    .usage-chart-wrap {
+      position: relative;
+      height: 320px;
+      margin-bottom: 10px;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #fff;
+    }
+    .usage-chart-wrap[hidden] {
+      display: none !important;
+    }
+
+    /* 额度预警：置顶焦点区，产品 Card 网格（每行最多 4 列，居中响应式） */
+    .quota-focus {
+      border: 1px solid #bfdbfe;
+      background: linear-gradient(180deg, #f8faff 0%, #ffffff 50%);
+      box-shadow: 0 4px 24px rgba(37, 99, 235, 0.07);
+    }
+    .quota-focus h2 { margin-bottom: 12px; }
+    .quota-card-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 252px));
+      gap: 18px;
+      justify-content: center;
+      justify-items: stretch;
+    }
+    @media (max-width: 1180px) {
+      .quota-card-grid { grid-template-columns: repeat(2, minmax(0, 300px)); }
+    }
+    @media (max-width: 680px) {
+      .quota-card-grid { grid-template-columns: minmax(0, 1fr); }
+    }
+    @media (max-width: 980px) {
+      .filter-col { min-width: 0; }
+      .equal-width { flex-basis: 100%; min-width: 0; }
+      .usage-presentation-main { width: 100%; }
+    }
+    /* 额度卡：左上角扁圆标签承载产品名 + 到期态强化 */
+    .quota-product-card {
+      position: relative;
+      padding: 1.15rem 1.2rem 1rem;
+      border-radius: 1.15rem;
+      background: #fff;
+      border: 1px solid #ebebeb;
+      box-shadow: 0 4px 18px rgba(0, 0, 0, 0.06);
+      display: flex;
+      flex-direction: column;
+      min-height: 280px;
+      transition: box-shadow 0.2s ease, border-color 0.2s ease;
+    }
+    .quota-product-card:hover {
+      box-shadow: 0 12px 36px rgba(15, 23, 42, 0.1);
+    }
+    .quota-product-card.quota-card--alert {
+      border-color: #fecaca;
+      box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.12), 0 14px 36px rgba(220, 38, 38, 0.12);
+    }
+    .quota-product-card.quota-card--warn {
+      border-color: #fde68a;
+      box-shadow: 0 0 0 2px rgba(217, 119, 6, 0.12), 0 10px 28px rgba(245, 158, 11, 0.08);
+    }
+    .quota-p-card__top-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 0.75rem;
+    }
+    .quota-p-card__product-tag {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      border: 1px solid #e2e8f0;
+      background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
+      box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+    }
+    .quota-p-card__product-tag-name {
+      flex: 1;
+      min-width: 0;
+      font-size: var(--fs-body);
+      font-weight: 600;
+      color: #0f172a;
+      line-height: var(--lh-tight);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .quota-p-card__product-tag--expiring {
+      border-color: #fdba74;
+      background: linear-gradient(180deg, #fffbeb 0%, #ffedd5 100%);
+      box-shadow: 0 0 0 1px rgba(234, 88, 12, 0.15), 0 2px 10px rgba(234, 88, 12, 0.08);
+    }
+    .quota-p-card__product-tag--expiring .quota-p-card__product-tag-name {
+      color: #9a3412;
+    }
+    .quota-p-card__meta-pill {
+      flex-shrink: 0;
+      padding: 7px 10px;
+      border-radius: 999px;
+      font-size: var(--fs-caption);
+      font-weight: 600;
+      color: #475569;
+      background: #f1f5f9;
+      border: 1px solid #e2e8f0;
+      white-space: nowrap;
+      font-variant-numeric: tabular-nums;
+    }
+    .quota-p-card__top-row--expiring .quota-p-card__meta-pill {
+      border-color: #fdba74;
+      background: #fff7ed;
+      color: #c2410c;
+    }
+    .quota-card--alert:not(.quota-card--warn) .quota-p-card__meta-pill {
+      border-color: #fecaca;
+      background: #fef2f2;
+      color: #b91c1c;
+    }
+    .quota-product-card.quota-card--alert .quota-p-card__top-row--expiring .quota-p-card__meta-pill {
+      border-color: #fdba74;
+      background: #fff7ed;
+      color: #c2410c;
+    }
+    .quota-p-card__subtitle {
+      font-size: var(--fs-caption);
+      color: var(--muted);
+      line-height: var(--lh-body);
+      margin: 0 0 0.75rem;
+      min-height: 2.6em;
+      padding-top: 2px;
+      border-top: 1px solid #e5e7eb;
+    }
+    .quota-p-card__indicator {
+      font-size: var(--fs-caption);
+      color: var(--muted);
+      margin-bottom: 0.35rem;
+    }
+    .quota-p-card__indicator-amount {
+      font-size: var(--fs-body);
+      font-weight: 700;
+      color: var(--text);
+      font-variant-numeric: tabular-nums;
+    }
+    .quota-p-card__indicator-percentage {
+      font-size: var(--fs-body);
+      font-weight: 700;
+      color: var(--brand);
+      font-variant-numeric: tabular-nums;
+    }
+    .quota-p-card__detail {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px 10px;
+      font-size: var(--fs-caption);
+      color: var(--muted);
+      margin-bottom: 0.65rem;
+    }
+    .quota-p-card__detail strong {
+      display: block;
+      font-size: var(--fs-secondary);
+      color: var(--text);
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      margin-top: 2px;
+    }
+    .quota-p-card__detail-emphasis strong {
+      color: var(--ok);
+    }
+    .quota-card--alert .quota-p-card__detail-emphasis strong {
+      color: var(--danger);
+    }
+    .quota-card--warn .quota-p-card__detail-emphasis strong {
+      color: #b45309;
+    }
+    .quota-p-card__progress-wrap {
+      margin-bottom: 0.65rem;
+    }
+    .quota-p-card__progress-native {
+      width: 100%;
+      height: 10px;
+      border-radius: 999px;
+      overflow: hidden;
+      border: none;
+      background: #e8e8e8;
+      accent-color: var(--brand);
+    }
+    .quota-card--alert .quota-p-card__progress-native {
+      accent-color: var(--danger);
+    }
+    .quota-card--warn .quota-p-card__progress-native {
+      accent-color: var(--warn);
+    }
+    .quota-p-card__progress-native::-webkit-progress-bar {
+      background: #e8e8e8;
+      border-radius: 999px;
+    }
+    .quota-p-card__progress-native::-webkit-progress-value {
+      border-radius: 999px;
+    }
+    .quota-p-card__progress-native::-moz-progress-bar {
+      border-radius: 999px;
+    }
+    .quota-p-card__push {
+      margin-top: auto;
+    }
+    .quota-p-card__push .btn.push-alert {
+      width: 100%;
+      border-color: #fca5a5;
+      color: #991b1b;
+      background: #fef2f2;
+      font-size: var(--fs-secondary);
+      padding: 9px 12px;
+      border-radius: 10px;
+    }
+    .quota-p-card__push .btn.push-alert:hover {
+      border-color: #f87171;
+      background: #fee2e2;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header class="header">
+      <h1 class="title">AI 用量与成本 Dashboard</h1>
+      <p class="subtitle">内部监控：用量、成本、ROI 与采购流程一体化看板</p>
+    </header>
+
+    <main class="grid">
+      <section class="card quota-focus" id="quotaModule" aria-label="用量预测与额度预警">
+        <h2><span>采购额度</span></h2>
+        <div class="quota-card-grid" id="quotaCardGrid"></div>
+      </section>
+
+      <section class="card" id="usageModule">
+        <h2 class="card-heading-with-action">
+          <span>用量监控</span>
+          <button type="button" class="btn card-heading-action" id="copyUsageBtn" title="复制当前表格为制表符分隔文本">复制表格数据</button>
+        </h2>
+        <div class="usage-filters">
+          <div class="usage-filters-row">
+            <div class="filter-col range-wrap">
+              <span class="filter-label">Time Range Selector</span>
+              <input id="usageTimeRangeText" type="text" placeholder="YYYY-MM-DD HH:mm:ss - YYYY-MM-DD HH:mm:ss" />
+              <div id="usageRangePanel" class="range-panel">
+                <div class="filter-col">
+                  <span class="filter-label">开始时间</span>
+                  <input id="usageRangeStart" type="datetime-local" step="1" />
+                </div>
+                <div class="filter-col">
+                  <span class="filter-label">结束时间</span>
+                  <input id="usageRangeEnd" type="datetime-local" step="1" />
+                </div>
+                <div class="range-actions">
+                  <button class="btn" id="applyRangeBtn">应用</button>
+                  <button class="btn" id="clearRangeBtn">清空</button>
+                </div>
+              </div>
+            </div>
+            <div class="filter-col">
+              <span class="filter-label">时间粒度</span>
+              <div id="granularityGroup" class="segmented"></div>
+            </div>
+          </div>
+          <div class="usage-filters-row">
+            <div class="filter-col multi-box equal-width">
+              <span class="filter-label">项目组</span>
+              <details id="projectGroupDropdown">
+                <summary id="projectSummary">
+                  <span class="multi-select-summary-inner">
+                    <span class="multi-select-summary-text placeholder" id="projectSummaryText">请选择项目组</span>
+                    <span class="multi-select-summary-badge" id="projectSummaryBadge" hidden>0</span>
+                  </span>
+                </summary>
+                <div class="range-actions">
+                  <button class="btn" id="projectSelectAllBtn" type="button">全选</button>
+                  <button class="btn" id="projectClearBtn" type="button">清空</button>
+                </div>
+                <div class="option-list" id="projectOptions"></div>
+              </details>
+            </div>
+            <div class="filter-col multi-box equal-width">
+              <span class="filter-label">项目组子团队</span>
+              <details id="subTeamDropdown">
+                <summary id="subTeamSummary">
+                  <span class="multi-select-summary-inner">
+                    <span class="multi-select-summary-text placeholder" id="subTeamSummaryText">请选择子团队</span>
+                    <span class="multi-select-summary-badge" id="subTeamSummaryBadge" hidden>0</span>
+                  </span>
+                </summary>
+                <div class="range-actions">
+                  <button class="btn" id="subTeamSelectAllBtn" type="button">全选</button>
+                  <button class="btn" id="subTeamClearBtn" type="button">清空</button>
+                </div>
+                <div class="option-list" id="subTeamOptions"></div>
+              </details>
+            </div>
+            <div class="filter-col multi-box equal-width">
+              <span class="filter-label">AI 产品</span>
+              <details id="productDropdown">
+                <summary id="productSummary">
+                  <span class="multi-select-summary-inner">
+                    <span class="multi-select-summary-text placeholder" id="productSummaryText">请选择AI产品</span>
+                    <span class="multi-select-summary-badge" id="productSummaryBadge" hidden>0</span>
+                  </span>
+                </summary>
+                <input id="productSearch" type="text" placeholder="搜索产品（可选）" />
+                <div class="range-actions">
+                  <button class="btn" id="productSelectAllBtn" type="button">全选</button>
+                  <button class="btn" id="productClearBtn" type="button">清空</button>
+                </div>
+                <div class="option-list" id="productOptions"></div>
+              </details>
+            </div>
+          </div>
+        </div>
+        <div class="usage-presentation-row">
+          <div class="usage-presentation-main">
+            <span class="filter-label" style="margin:0;">数据呈现</span>
+            <div id="usageViewModeGroup" class="segmented usage-view-toggle">
+              <label>
+                <input type="radio" name="usageViewMode" value="table" checked />
+                <span>表格</span>
+              </label>
+              <label>
+                <input type="radio" name="usageViewMode" value="bar" />
+                <span>柱状图</span>
+              </label>
+              <label>
+                <input type="radio" name="usageViewMode" value="line" />
+                <span>折线图</span>
+              </label>
+            </div>
+          </div>
+          <label class="usage-subteam-toggle">
+            <input type="checkbox" id="usageShowSubTeamsCheckbox" />
+            <span>显示子分组</span>
+          </label>
+        </div>
+        <div id="usageChartWrap" class="usage-chart-wrap" hidden>
+          <canvas id="usageChartCanvas" aria-label="用量图表"></canvas>
+        </div>
+        <div class="table-wrap" id="usageTableWrap">
+          <table id="usageMainTable">
+            <thead id="usageTableHead"></thead>
+            <tbody id="usageTableBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="card" id="costModule">
+        <h2><span>ROI分析</span><span class="small">AI 成本 vs 传统人力成本</span></h2>
+        <div class="kpis" id="kpiPanel"></div>
+        <div class="filters">
+          <select id="costTimeDim"></select>
+          <select id="costSplit"></select>
+          <button class="btn" id="copyCostBtn">复制成本数据</button>
+        </div>
+        <div class="table-wrap" style="margin-bottom:10px;">
+          <table>
+            <thead>
+              <tr>
+                <th class="sortable" data-table="cost" data-key="period">时间</th>
+                <th class="sortable" data-table="cost" data-key="project">项目</th>
+                <th class="sortable" data-table="cost" data-key="product">AI产品</th>
+                <th class="sortable" data-table="cost" data-key="humanCost">传统人力成本</th>
+                <th class="sortable" data-table="cost" data-key="aiCost">AI成本</th>
+                <th>成本差值</th>
+                <th>节省比例</th>
+                <th>ROI</th>
+              </tr>
+            </thead>
+            <tbody id="costTableBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="card" id="procurementModule">
+        <h2><span>采购进度</span><span class="small">可编辑状态与负责人</span></h2>
+        <div class="filters">
+          <button class="btn" id="copyProcBtn">复制采购进度</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>AI产品</th>
+                <th>继续采购决策</th>
+                <th>ROI 信息收集</th>
+                <th>发起邮件</th>
+                <th>采购推进</th>
+                <th>财务审批</th>
+                <th>交付到账</th>
+                <th>负责人</th>
+                <th>最后更新时间</th>
+              </tr>
+            </thead>
+            <tbody id="procTableBody"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    const appState = {
+      usageRangeStart: null,
+      usageRangeEnd: null,
+      usageGranularity: "monthly",
+      usageViewMode: "table",
+      usageShowSubTeams: false,
+      usageExpandedParentKeys: [],
+      usageExpandAllOnNextRender: false,
+      selectedProjectGroups: [],
+      selectedSubTeams: [],
+      selectedProducts: [],
+      productSearch: "",
+      costTimeDim: "月度",
+      costSplit: "项目",
+      sorting: {
+        usage: { key: "projectGroup", dir: "asc" },
+        cost: { key: "period", dir: "asc" }
+      }
+    };
+
+    let usageChartInstance = null;
+
+    /** 用量明细：多子团队、跨 2025Q4～2026Q1 多时间维度，便于按日/月/季度/半年/年聚合 */
+    const usageData = (function buildUsageDemoData() {
+      function pad2(v) {
+        return String(v).padStart(2, "0");
+      }
+      function fmt(dt) {
+        return `${dt.getFullYear()}-${pad2(dt.getMonth() + 1)}-${pad2(dt.getDate())} ${pad2(dt.getHours())}:${pad2(dt.getMinutes())}:${pad2(dt.getSeconds())}`;
+      }
+      const products = ["AI Product 1", "AI Product 2", "AI Product 3", "AI Product 4", "AI Product 5"];
+      const subTeamsByProject = {
+        "项目组 A": ["A-前端组", "A-算法组", "A-平台组", "A-测试与质量"],
+        "项目组 B": ["B-平台组", "B-数据组", "B-商业化", "B-设计体验"],
+        "项目组 C": ["C-算法组", "C-平台组", "C-业务中台", "C-实施交付"],
+        "项目组 D": ["D-数据组", "D-前端组", "D-基础设施", "D-安全合规"],
+        "项目组 E": ["E-产品组", "E-研发组", "E-运营分析", "E-客户成功"]
+      };
+      const projects = Object.keys(subTeamsByProject);
+      const rows = [];
+      let seq = 0;
+      const end = new Date("2026-03-27T23:59:59");
+      for (let d = new Date("2025-10-02T08:15:00"); d.getTime() <= end.getTime(); d.setDate(d.getDate() + 1)) {
+        const y = d.getFullYear();
+        const m = d.getMonth() + 1;
+        const dense = y === 2026 && m <= 3;
+        const sparse = y === 2025 || (y === 2026 && m === 1 && d.getDate() <= 15);
+        const perDay = dense ? 5 : sparse ? 3 : 4;
+        for (let k = 0; k < perDay; k++) {
+          const pg = projects[(seq + k * 2) % projects.length];
+          const teams = subTeamsByProject[pg];
+          const st = teams[(seq * 3 + k * 5 + d.getDate()) % teams.length];
+          const prod = products[(seq + k * 4 + m) % products.length];
+          const planned = 260 + ((seq * 19 + k * 41) % 520);
+          const jitter = ((seq * 23 + k * 13 + m * 7) % 140) - 68;
+          let actual = planned + jitter;
+          if (actual < Math.floor(planned * 0.85)) actual = Math.floor(planned * 0.88);
+          const dt = new Date(d);
+          dt.setHours(8 + ((seq + k) % 10), (seq * 7 + k * 11) % 60, (seq + k * 3) % 60);
+          rows.push({
+            timestamp: fmt(dt),
+            projectGroup: pg,
+            subTeam: st,
+            product: prod,
+            planned,
+            actual
+          });
+        }
+        seq++;
+      }
+      return rows;
+    })();
+
+    function getUsageFilterCriteria() {
+      return {
+        usageRangeStart: appState.usageRangeStart,
+        usageRangeEnd: appState.usageRangeEnd,
+        selectedProjectGroups: appState.selectedProjectGroups,
+        selectedSubTeams: appState.selectedSubTeams,
+        selectedProducts: appState.selectedProducts
+      };
+    }
+
+    /**
+     * 步骤 1：仅筛选。不读取分析视角；入参为统一明细源子集或全量。
+     */
+    function applyUsageFilters(sourceRows, criteria) {
+      const projectSet = new Set(criteria.selectedProjectGroups);
+      const subSet = new Set(criteria.selectedSubTeams);
+      const productSet = new Set(criteria.selectedProducts);
+      return sourceRows.filter((r) => {
+        const dt = parseTimestamp(r.timestamp);
+        if (criteria.usageRangeStart && dt < criteria.usageRangeStart) return false;
+        if (criteria.usageRangeEnd && dt > criteria.usageRangeEnd) return false;
+        if (projectSet.size > 0 && !projectSet.has(r.projectGroup)) return false;
+        if (subSet.size > 0 && !subSet.has(r.subTeam)) return false;
+        if (productSet.size > 0 && !productSet.has(r.product)) return false;
+        return true;
+      });
+    }
+
+    /** 汇总粒度下列名：无自定义区间时为固定文案，有区间时附带起止日期 */
+    function getUsageOverallPeriodLabel() {
+      const s = appState.usageRangeStart;
+      const e = appState.usageRangeEnd;
+      if (s && e && !Number.isNaN(s.getTime()) && !Number.isNaN(e.getTime())) {
+        const ds = `${s.getFullYear()}-${pad2(s.getMonth() + 1)}-${pad2(s.getDate())}`;
+        const de = `${e.getFullYear()}-${pad2(e.getMonth() + 1)}-${pad2(e.getDate())}`;
+        return `汇总（${ds}～${de}）`;
+      }
+      return "汇总（统计）";
+    }
+
+    /**
+     * 步骤 2：交叉聚合。项目组 × AI 产品 × 时间粒度；「汇总」时不拆时间，整段区间内一条。
+     */
+    function aggregateUsageCross(filteredRows, granularity) {
+      const map = new Map();
+      filteredRows.forEach((r) => {
+        const period =
+          granularity === "overall"
+            ? getUsageOverallPeriodLabel()
+            : toUsagePeriodLabel(parseTimestamp(r.timestamp), granularity);
+        const key = `${period}|${r.projectGroup}|${r.product}`;
+        const old = map.get(key) || {
+          period,
+          projectGroup: r.projectGroup,
+          product: r.product,
+          planned: 0,
+          actual: 0
+        };
+        old.planned += r.planned;
+        old.actual += r.actual;
+        map.set(key, old);
+      });
+      return Array.from(map.values());
+    }
+
+    /** 项目组 × 子团队 × AI 产品 × 时间粒度（明细行） */
+    function aggregateUsageCrossSubTeam(filteredRows, granularity) {
+      const map = new Map();
+      filteredRows.forEach((r) => {
+        const period =
+          granularity === "overall"
+            ? getUsageOverallPeriodLabel()
+            : toUsagePeriodLabel(parseTimestamp(r.timestamp), granularity);
+        const key = `${period}|${r.projectGroup}|${r.subTeam}|${r.product}`;
+        const old = map.get(key) || {
+          period,
+          projectGroup: r.projectGroup,
+          subTeam: r.subTeam,
+          product: r.product,
+          planned: 0,
+          actual: 0,
+          usageRowKind: "subTeam"
+        };
+        old.planned += r.planned;
+        old.actual += r.actual;
+        map.set(key, old);
+      });
+      return Array.from(map.values());
+    }
+
+    function usageCrossLabel(projectGroup, product) {
+      return `${projectGroup} — ${product}`;
+    }
+
+    /** 完整管道：筛选 → 汇总行 + 子团队明细映射 */
+    function buildUsageDisplayRows() {
+      const criteria = getUsageFilterCriteria();
+      const filtered = applyUsageFilters(usageData, criteria);
+      const granularity = appState.usageGranularity;
+      const summaryRows = aggregateUsageCross(filtered, granularity).map((r) => {
+        const row = {
+          ...r,
+          usageRowKind: "summary",
+          _parentKey: `${r.projectGroup}|${r.product}|${r.period}`
+        };
+        return row;
+      });
+      const subTeamRows = aggregateUsageCrossSubTeam(filtered, granularity).map((r) => ({
+        ...r,
+        usageRowKind: "subTeam",
+        _parentKey: `${r.projectGroup}|${r.product}|${r.period}`
+      }));
+      const subTeamByParent = new Map();
+      subTeamRows.forEach((r) => {
+        const pk = r._parentKey;
+        if (!subTeamByParent.has(pk)) subTeamByParent.set(pk, []);
+        subTeamByParent.get(pk).push(r);
+      });
+      subTeamByParent.forEach((arr) =>
+        arr.sort((a, b) =>
+          String(a.subTeam ?? "").localeCompare(String(b.subTeam ?? ""), "zh-CN", { numeric: true })
+        )
+      );
+      return { filteredRows: filtered, summaryRows, subTeamRows, subTeamByParent };
+    }
+
+    function pruneUsageExpandedParentKeys(subTeamByParent) {
+      const valid = new Set(subTeamByParent.keys());
+      appState.usageExpandedParentKeys = appState.usageExpandedParentKeys.filter((k) => valid.has(k));
+    }
+
+    const chartPalette = ["#2563eb", "#059669", "#d97706", "#7c3aed", "#db2777", "#0891b2", "#ca8a04", "#4f46e5", "#dc2626", "#0d9488"];
+
+    const quotaData = [
+      { product: "混元", quota: 10000, used: 9100, expire: "2026-04-20" },
+      { product: "Tripo", quota: 7000, used: 5400, expire: "2026-06-30" },
+      { product: "蒙皮", quota: 5500, used: 4600, expire: "2026-04-05" },
+      { product: "Nano", quota: 8000, used: 5280, expire: "2026-05-18" }
+    ];
+
+    const costData = [
+      { period: "2025-10", project: "Ares", product: "OpenAI", humanCost: 91000, aiCost: 29000 },
+      { period: "2025-10", project: "Nova", product: "Claude", humanCost: 41000, aiCost: 11000 },
+      { period: "2025-10", project: "Titan", product: "Gemini", humanCost: 53000, aiCost: 15000 },
+      { period: "2025-11", project: "Ares", product: "Claude", humanCost: 47000, aiCost: 14000 },
+      { period: "2025-11", project: "Nova", product: "OpenAI", humanCost: 68000, aiCost: 21000 },
+      { period: "2025-11", project: "Titan", product: "OpenAI", humanCost: 99000, aiCost: 33000 },
+      { period: "2025-12", project: "Ares", product: "Gemini", humanCost: 44000, aiCost: 12000 },
+      { period: "2025-12", project: "Nova", product: "Gemini", humanCost: 58000, aiCost: 16000 },
+      { period: "2025-12", project: "Titan", product: "Claude", humanCost: 61000, aiCost: 19000 },
+      { period: "2026-01", project: "Ares", product: "OpenAI", humanCost: 98000, aiCost: 32000 },
+      { period: "2026-01", project: "Ares", product: "Claude", humanCost: 45000, aiCost: 13000 },
+      { period: "2026-01", project: "Nova", product: "OpenAI", humanCost: 72000, aiCost: 22000 },
+      { period: "2026-02", project: "Nova", product: "Gemini", humanCost: 56000, aiCost: 17000 },
+      { period: "2026-02", project: "Titan", product: "OpenAI", humanCost: 102000, aiCost: 36000 },
+      { period: "2026-02", project: "Titan", product: "Claude", humanCost: 64000, aiCost: 20000 },
+      { period: "2026-03", project: "Ares", product: "Gemini", humanCost: 52000, aiCost: 18000 },
+      { period: "2026-03", project: "Nova", product: "Claude", humanCost: 69000, aiCost: 28000 },
+      { period: "2026-03", project: "Titan", product: "OpenAI", humanCost: 115000, aiCost: 42000 }
+    ];
+
+    const procurementData = [
+      { product: "OpenAI", stages: ["推进中","完成","完成","推进中","Pending","Pending"], owner: "Lina", updatedAt: "2026-03-25 10:30" },
+      { product: "Claude", stages: ["Pass","完成","完成","完成","推进中","Pending"], owner: "Ken", updatedAt: "2026-03-24 18:15" },
+      { product: "Gemini", stages: ["Pending","推进中","Pending","Pending","Pending","Pending"], owner: "Iris", updatedAt: "2026-03-25 09:05" }
+    ];
+
+    const granularityOptions = [
+      { value: "daily", label: "按日" },
+      { value: "monthly", label: "按月" },
+      { value: "quarterly", label: "按季度" },
+      { value: "halfYear", label: "按半年" },
+      { value: "yearly", label: "按全年" },
+      { value: "overall", label: "汇总（统计）" }
+    ];
+    const dims = ["月度", "季度", "年度"];
+    const projectGroupOptions = ["项目组 A", "项目组 B", "项目组 C", "项目组 D", "项目组 E"];
+    const aiProductOptions = ["AI Product 1", "AI Product 2", "AI Product 3", "AI Product 4", "AI Product 5"];
+    const splitDims = ["项目", "产品"];
+
+    function formatNumber(n) {
+      return Number(n).toLocaleString("zh-CN");
+    }
+    function formatPercent(n) {
+      return (n * 100).toFixed(1) + "%";
+    }
+    function getQuotaLevel(ratio) {
+      if (ratio >= 0.9) return "danger";
+      if (ratio >= 0.8) return "warn";
+      return "ok";
+    }
+    function daysTo(dateText) {
+      const now = new Date("2026-03-25T00:00:00");
+      const target = new Date(dateText + "T00:00:00");
+      return Math.ceil((target - now) / (1000 * 60 * 60 * 24));
+    }
+    /** 与卡片上是否展示「推送提醒」一致：额度告急 / 即将到期 / 剩余偏低 */
+    function quotaNeedsPushAlert(q) {
+      const remain = q.quota - q.used;
+      const ratio = q.used / q.quota;
+      const remainRatio = remain / q.quota;
+      const d = daysTo(q.expire);
+      const level = getQuotaLevel(ratio);
+      const nearExpiry = d <= 20;
+      const lowRemain = remainRatio <= 0.15;
+      return level === "danger" || nearExpiry || lowRemain;
+    }
+    function parsePeriodToQuarter(period) {
+      const [y, m] = period.split("-").map(Number);
+      const q = Math.floor((m - 1) / 3) + 1;
+      return `${y}-Q${q}`;
+    }
+    function parsePeriodToYear(period) {
+      return period.split("-")[0];
+    }
+    function toDimPeriod(period, dim) {
+      if (dim === "月度") return period;
+      if (dim === "季度") return parsePeriodToQuarter(period);
+      if (dim === "年度") return parsePeriodToYear(period);
+      return period;
+    }
+    function parseTimestamp(ts) {
+      return new Date(ts.replace(" ", "T"));
+    }
+    function pad2(v) {
+      return String(v).padStart(2, "0");
+    }
+    function formatDateTime(date) {
+      return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())} ${pad2(date.getHours())}:${pad2(date.getMinutes())}:${pad2(date.getSeconds())}`;
+    }
+    function formatForInput(date) {
+      return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}T${pad2(date.getHours())}:${pad2(date.getMinutes())}:${pad2(date.getSeconds())}`;
+    }
+    function parseRangeText(text) {
+      const parts = text.split(" - ");
+      if (parts.length !== 2) return null;
+      const start = parseTimestamp(parts[0]);
+      const end = parseTimestamp(parts[1]);
+      if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
+      if (start > end) return null;
+      return { start, end };
+    }
+    function toUsagePeriodLabel(date, granularity) {
+      const y = date.getFullYear();
+      const m = date.getMonth() + 1;
+      const d = date.getDate();
+      if (granularity === "daily") return `${y}-${pad2(m)}-${pad2(d)}`;
+      if (granularity === "monthly") return `${y}-${pad2(m)}`;
+      if (granularity === "quarterly") return `${y}-Q${Math.floor((m - 1) / 3) + 1}`;
+      if (granularity === "halfYear") return `${y}-${m <= 6 ? "H1" : "H2"}`;
+      return `${y}`;
+    }
+    /** 与当前时间粒度对齐的上一周期标签（用于实际用量环比） */
+    function previousUsagePeriod(period, granularity) {
+      if (!period || !granularity) return null;
+      if (granularity === "overall") return null;
+      if (granularity === "daily") {
+        const parts = period.split("-").map(Number);
+        if (parts.length !== 3 || parts.some((n) => Number.isNaN(n))) return null;
+        const [y, mo, da] = parts;
+        const dt = new Date(y, mo - 1, da);
+        dt.setDate(dt.getDate() - 1);
+        return toUsagePeriodLabel(dt, "daily");
+      }
+      if (granularity === "monthly") {
+        const [y, m] = period.split("-").map(Number);
+        if (Number.isNaN(y) || Number.isNaN(m)) return null;
+        let ny = y;
+        let nm = m - 1;
+        if (nm < 1) {
+          nm = 12;
+          ny--;
+        }
+        return `${ny}-${pad2(nm)}`;
+      }
+      if (granularity === "quarterly") {
+        const mm = period.match(/^(\d{4})-Q([1-4])$/);
+        if (!mm) return null;
+        let y = Number(mm[1]);
+        let q = Number(mm[2]) - 1;
+        if (q < 1) {
+          q = 4;
+          y--;
+        }
+        return `${y}-Q${q}`;
+      }
+      if (granularity === "halfYear") {
+        const mm = period.match(/^(\d{4})-(H[12])$/);
+        if (!mm) return null;
+        const y = Number(mm[1]);
+        if (mm[2] === "H1") return `${y - 1}-H2`;
+        return `${y}-H1`;
+      }
+      if (granularity === "yearly") {
+        const y = Number(period);
+        if (Number.isNaN(y)) return null;
+        return String(y - 1);
+      }
+      return null;
+    }
+    /** 相对上一周期的实际用量增量与环比；汇总行为 项目组×产品，子分组行为 项目组×子团队×产品 */
+    function attachUsageMomMetrics(rows, granularity) {
+      if (!rows.length) return;
+      const rowMap = new Map();
+      rows.forEach((r) => {
+        const k =
+          r.usageRowKind === "subTeam"
+            ? `${r.period}|${r.projectGroup}|${r.subTeam}|${r.product}`
+            : `${r.period}|${r.projectGroup}|${r.product}`;
+        rowMap.set(k, r);
+      });
+      rows.forEach((r) => {
+        const prevP = previousUsagePeriod(r.period, granularity);
+        const prevKey =
+          r.usageRowKind === "subTeam"
+            ? prevP
+              ? `${prevP}|${r.projectGroup}|${r.subTeam}|${r.product}`
+              : null
+            : prevP
+              ? `${prevP}|${r.projectGroup}|${r.product}`
+              : null;
+        const prevRow = prevKey ? rowMap.get(prevKey) : null;
+        const prevActual = prevRow != null ? prevRow.actual : null;
+        if (prevActual == null) {
+          r.momDelta = null;
+          r.momPct = null;
+        } else {
+          r.momDelta = r.actual - prevActual;
+          r.momPct = prevActual !== 0 ? r.momDelta / prevActual : null;
+        }
+      });
+    }
+    function aggregateRows(rows, dim, splitBy, type) {
+      const map = new Map();
+      rows.forEach((r) => {
+        const period = toDimPeriod(r.period, dim);
+        const key = splitBy === "产品" ? `${period}|${r.product}` : `${period}|${r.project}`;
+        const old = map.get(key) || {
+          period,
+          project: splitBy === "项目" ? r.project : "All",
+          product: splitBy === "产品" ? r.product : "All",
+          planned: 0,
+          actual: 0,
+          humanCost: 0,
+          aiCost: 0
+        };
+        if (type === "usage") {
+          old.planned += r.planned;
+          old.actual += r.actual;
+        } else {
+          old.humanCost += r.humanCost;
+          old.aiCost += r.aiCost;
+        }
+        map.set(key, old);
+      });
+      return Array.from(map.values());
+    }
+    function sortRows(rows, tableName) {
+      const { key, dir } = appState.sorting[tableName];
+      const mul = dir === "asc" ? 1 : -1;
+      return rows.sort((a, b) => (a[key] > b[key] ? mul : a[key] < b[key] ? -mul : 0));
+    }
+
+    /** 用量表：项目组（首列）、AI 产品（次列）、时间；主列排序时次列、时间默认升序稳定 */
+    function sortUsageRows(rows) {
+      const { key, dir } = appState.sorting.usage;
+      const mul = dir === "asc" ? 1 : -1;
+      const cmpPeriod = (pa, pb) => (pa > pb ? 1 : pa < pb ? -1 : 0);
+      const cmpStr = (x, y) =>
+        String(x ?? "").localeCompare(String(y ?? ""), "zh-CN", { numeric: true });
+      const primary = "projectGroup";
+      const secondary = "product";
+      rows.sort((a, b) => {
+        if (key === primary) {
+          const c1 = cmpStr(a[primary], b[primary]) * mul;
+          if (c1 !== 0) return c1;
+          const c2 = cmpStr(a[secondary], b[secondary]);
+          if (c2 !== 0) return c2;
+          return cmpPeriod(a.period, b.period);
+        }
+        if (key === secondary) {
+          const c1 = cmpStr(a[secondary], b[secondary]) * mul;
+          if (c1 !== 0) return c1;
+          const c2 = cmpStr(a[primary], b[primary]);
+          if (c2 !== 0) return c2;
+          return cmpPeriod(a.period, b.period);
+        }
+        if (key === "period") {
+          const c1 = cmpPeriod(a.period, b.period) * mul;
+          if (c1 !== 0) return c1;
+          const c2 = cmpStr(a[primary], b[primary]);
+          if (c2 !== 0) return c2;
+          return cmpStr(a[secondary], b[secondary]);
+        }
+        if (key === "momDelta") {
+          const na = a.momDelta;
+          const nb = b.momDelta;
+          const cmpNullLast = () => {
+            if (na == null && nb == null) return 0;
+            if (na == null) return 1;
+            if (nb == null) return -1;
+            return na > nb ? 1 : na < nb ? -1 : 0;
+          };
+          const c1 = cmpNullLast() * mul;
+          if (c1 !== 0) return c1;
+          const c2 = cmpStr(a[primary], b[primary]);
+          if (c2 !== 0) return c2;
+          return cmpStr(a[secondary], b[secondary]);
+        }
+        const va = a[key];
+        const vb = b[key];
+        let c1 = (va > vb ? 1 : va < vb ? -1 : 0) * mul;
+        if (c1 !== 0) return c1;
+        c1 = cmpStr(a[primary], b[primary]);
+        if (c1 !== 0) return c1;
+        c1 = cmpStr(a[secondary], b[secondary]);
+        if (c1 !== 0) return c1;
+        return cmpPeriod(a.period, b.period);
+      });
+    }
+    function copyText(text) {
+      navigator.clipboard.writeText(text).then(() => alert("已复制到剪贴板"));
+    }
+    function selectWithOptions(id, options, current) {
+      const el = document.getElementById(id);
+      el.innerHTML = options.map((op) => `<option value="${op}" ${op === current ? "selected" : ""}>${op}</option>`).join("");
+      return el;
+    }
+
+    function getAvailableSubTeams() {
+      const pg = appState.selectedProjectGroups;
+      const set = new Set();
+      usageData.forEach((r) => {
+        if (!pg.length || pg.includes(r.projectGroup)) set.add(r.subTeam);
+      });
+      return Array.from(set).sort((a, b) => a.localeCompare(b, "zh-CN"));
+    }
+
+    function pruneSelectedSubTeams() {
+      const avail = new Set(getAvailableSubTeams());
+      appState.selectedSubTeams = appState.selectedSubTeams.filter((s) => avail.has(s));
+    }
+
+    function destroyUsageChart() {
+      if (usageChartInstance) {
+        usageChartInstance.destroy();
+        usageChartInstance = null;
+      }
+    }
+
+    function renderUsageChart(rows) {
+      const canvas = document.getElementById("usageChartCanvas");
+      if (!canvas || typeof Chart === "undefined") return;
+      destroyUsageChart();
+      if (!rows.length) return;
+      const mode = appState.usageViewMode;
+      const periods = [...new Set(rows.map((r) => r.period))].sort();
+      const useBar = mode === "bar" || periods.length <= 1;
+      const pairKey = (r) => `${r.projectGroup}\0${r.product}`;
+      if (useBar) {
+        const byCross = new Map();
+        rows.forEach((r) => {
+          const lab = usageCrossLabel(r.projectGroup, r.product);
+          byCross.set(lab, (byCross.get(lab) || 0) + r.actual);
+        });
+        const sorted = Array.from(byCross.entries()).sort((a, b) => b[1] - a[1]).slice(0, 18);
+        const barDatasetLabel =
+          appState.usageGranularity === "overall"
+            ? "实际用量（区间汇总）"
+            : "实际用量（区间内合计）";
+        usageChartInstance = new Chart(canvas.getContext("2d"), {
+          type: "bar",
+          data: {
+            labels: sorted.map((x) => x[0]),
+            datasets: [{
+              label: barDatasetLabel,
+              data: sorted.map((x) => x[1]),
+              backgroundColor: "rgba(37, 99, 235, 0.7)",
+              borderColor: "#2563eb",
+              borderWidth: 1
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+              x: { ticks: { maxRotation: 50, autoSkip: false, maxTicksLimit: 20 } },
+              y: { beginAtZero: true }
+            }
+          }
+        });
+        return;
+      }
+      const pairTotals = [...new Set(rows.map(pairKey))].map((k) => {
+        const [projectGroup, product] = k.split("\0");
+        const total = rows
+          .filter((x) => x.projectGroup === projectGroup && x.product === product)
+          .reduce((s, x) => s + x.actual, 0);
+        return { projectGroup, product, total };
+      });
+      pairTotals.sort((a, b) => b.total - a.total);
+      const topPairs = pairTotals.slice(0, 12);
+      const datasets = topPairs.map((pair, i) => {
+        const color = chartPalette[i % chartPalette.length];
+        const data = periods.map((p) => {
+          const hit = rows.find(
+            (r) =>
+              r.period === p &&
+              r.projectGroup === pair.projectGroup &&
+              r.product === pair.product
+          );
+          return hit ? hit.actual : 0;
+        });
+        return {
+          label: usageCrossLabel(pair.projectGroup, pair.product),
+          data,
+          borderColor: color,
+          backgroundColor: color,
+          tension: 0.2,
+          fill: false,
+          pointRadius: 3
+        };
+      });
+      usageChartInstance = new Chart(canvas.getContext("2d"), {
+        type: "line",
+        data: { labels: periods, datasets },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: "index", intersect: false },
+          plugins: { legend: { position: "bottom" } },
+          scales: {
+            y: { beginAtZero: true }
+          }
+        }
+      });
+    }
+
+    function renderUsageTableHead() {
+      document.getElementById("usageTableHead").innerHTML = `
+        <tr>
+          <th class="sortable" data-table="usage" data-key="projectGroup">项目组</th>
+          <th class="sortable" data-table="usage" data-key="product">AI 产品</th>
+          <th class="sortable" data-table="usage" data-key="period">时间</th>
+          <th class="sortable" data-table="usage" data-key="planned">预估用量</th>
+          <th class="sortable" data-table="usage" data-key="actual">实际用量</th>
+          <th>用量差值（绝对 / 百分比）</th>
+          <th class="sortable" data-table="usage" data-key="momDelta">环比变化</th>
+        </tr>
+      `;
+    }
+
+    function renderUsageTable() {
+      renderUsageTableHead();
+      const { summaryRows, subTeamRows, subTeamByParent } = buildUsageDisplayRows();
+      pruneUsageExpandedParentKeys(subTeamByParent);
+      if (appState.usageShowSubTeams && appState.usageExpandAllOnNextRender) {
+        appState.usageExpandedParentKeys = [...subTeamByParent.keys()].filter(
+          (k) => (subTeamByParent.get(k) || []).length > 0
+        );
+        appState.usageExpandAllOnNextRender = false;
+      }
+      attachUsageMomMetrics(summaryRows, appState.usageGranularity);
+      attachUsageMomMetrics(subTeamRows, appState.usageGranularity);
+      const sortedSummary = [...summaryRows];
+      sortUsageRows(sortedSummary);
+
+      const expandedSet = new Set(appState.usageExpandedParentKeys);
+      const flatRows = [];
+      sortedSummary.forEach((r) => {
+        flatRows.push(r);
+        if (appState.usageShowSubTeams && expandedSet.has(r._parentKey)) {
+          flatRows.push(...(subTeamByParent.get(r._parentKey) || []));
+        }
+      });
+
+      const tableWrap = document.getElementById("usageTableWrap");
+      const chartWrap = document.getElementById("usageChartWrap");
+      const isTable = appState.usageViewMode === "table";
+      tableWrap.hidden = !isTable;
+      chartWrap.hidden = isTable;
+      if (isTable) destroyUsageChart();
+      else renderUsageChart(sortedSummary);
+
+      const escCell = (s) =>
+        String(s)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;");
+
+      const headMain = "项目组";
+      const headAlt = "AI 产品";
+      const body = document.getElementById("usageTableBody");
+      body.innerHTML = flatRows.map((r) => {
+        const diff = r.actual - r.planned;
+        const ratio = r.planned ? r.actual / r.planned : 0;
+        const cls = r.planned && ratio >= 1 ? "danger" : r.planned && ratio >= 0.9 ? "warn" : "";
+        const usageDiffCell = r.planned
+          ? `${diff >= 0 ? "+" : ""}${formatNumber(diff)} / ${formatPercent(diff / r.planned)}`
+          : "—";
+        const momCellText =
+          r.momDelta != null
+            ? `${r.momDelta >= 0 ? "+" : ""}${formatNumber(r.momDelta)} / ${
+                r.momPct != null ? formatPercent(r.momPct) : "—"
+              }`
+            : "—";
+        const pk = r._parentKey;
+        const nKids = (subTeamByParent.get(pk) || []).length;
+        const hasKids = appState.usageShowSubTeams && r.usageRowKind === "summary" && nKids > 0;
+        let colPg;
+        if (r.usageRowKind === "subTeam") {
+          colPg = `<td class="usage-col-project usage-col-project--sub"><span class="usage-tree-indent">${escCell(r.subTeam)}</span></td>`;
+        } else if (hasKids) {
+          const ex = expandedSet.has(pk);
+          colPg = `<td class="usage-col-project"><span class="usage-tree-cell"><button type="button" class="usage-tree-toggle" aria-expanded="${ex}" data-usage-toggle="${encodeURIComponent(pk)}" title="${ex ? "收起" : "展开"}子分组">${ex ? "▼" : "▶"}</button><span>${escCell(r.projectGroup)}</span></span></td>`;
+        } else {
+          colPg = `<td class="usage-col-project">${escCell(r.projectGroup)}</td>`;
+        }
+        return `
+          <tr class="${cls}">
+            ${colPg}
+            <td>${escCell(r.product)}</td>
+            <td>${escCell(r.period)}</td>
+            <td>${formatNumber(r.planned)}</td>
+            <td>${formatNumber(r.actual)}</td>
+            <td>${usageDiffCell}</td>
+            <td>${momCellText}</td>
+          </tr>
+        `;
+      }).join("");
+
+      const subCb = document.getElementById("usageShowSubTeamsCheckbox");
+      if (subCb) subCb.checked = appState.usageShowSubTeams;
+
+      document.getElementById("copyUsageBtn").onclick = () => {
+        const text = flatRows
+          .map((r) => {
+            const a = r.usageRowKind === "subTeam" ? `  ${r.subTeam}` : r.projectGroup;
+            const b = r.product;
+            const mom =
+              r.momDelta != null
+                ? `${r.momDelta >= 0 ? "+" : ""}${r.momDelta}\t${
+                    r.momPct != null ? (r.momPct * 100).toFixed(1) + "%" : "—"
+                  }`
+                : "—\t—";
+            return `${a}\t${b}\t${r.period}\t${r.planned}\t${r.actual}\t${mom}`;
+          })
+          .join("\n");
+        copyText(
+          `${headMain}\t${headAlt}\t时间\t预估\t实际\t环比增量\t环比百分比\n${text}`
+        );
+      };
+    }
+
+    function renderQuotaCards() {
+      const grid = document.getElementById("quotaCardGrid");
+      if (!grid) return;
+      grid.innerHTML = [...quotaData]
+        .sort(
+          (a, b) =>
+            Number(quotaNeedsPushAlert(b)) - Number(quotaNeedsPushAlert(a))
+        )
+        .map((q) => {
+          const remain = q.quota - q.used;
+          const ratio = q.used / q.quota;
+          const remainRatio = remain / q.quota;
+          const d = daysTo(q.expire);
+          const level = getQuotaLevel(ratio);
+          const nearExpiry = d <= 20;
+          const lowRemain = remainRatio <= 0.15;
+          const isAlert = quotaNeedsPushAlert(q);
+          const isWarn = !isAlert && level === "warn";
+          const statusText = nearExpiry
+            ? "即将到期"
+            : ratio >= 0.9
+              ? "额度告急"
+              : ratio >= 0.8
+                ? "接近上限"
+                : lowRemain
+                  ? "余额偏低"
+                  : "正常";
+          const cardCls = `quota-product-card${isAlert ? " quota-card--alert" : ""}${isWarn ? " quota-card--warn" : ""}`;
+          const showPush = isAlert;
+          const esc = (s) =>
+            String(s)
+              .replace(/&/g, "&amp;")
+              .replace(/"/g, "&quot;")
+              .replace(/</g, "&lt;");
+          const tagMod = nearExpiry ? " quota-p-card__product-tag--expiring" : "";
+          const topRowMod = nearExpiry ? " quota-p-card__top-row--expiring" : "";
+          const daysLabel = d < 0 ? "已过期" : `剩 ${d} 天`;
+          const pushBlock = showPush
+            ? `<div class="quota-p-card__push"><button type="button" class="btn push-alert" data-quota-push data-product="${esc(q.product)}">推送提醒</button></div>`
+            : "";
+          return `
+            <article class="${cardCls}" data-product="${esc(q.product)}">
+              <div class="quota-p-card__top-row${topRowMod}">
+                <div class="quota-p-card__product-tag${tagMod}" title="${esc(q.product)}">
+                  <span class="quota-p-card__product-tag-name">${esc(q.product)}</span>
+                </div>
+                <span class="quota-p-card__meta-pill" title="距离到期">${daysLabel}</span>
+              </div>
+              <p class="quota-p-card__subtitle"><strong style="color:var(--text);font-weight:600;">${statusText}</strong> · 到期日 ${q.expire}。</p>
+              <div class="quota-p-card__indicator">
+                <span class="quota-p-card__indicator-amount">${formatNumber(q.used)}</span> 已用 / <span class="quota-p-card__indicator-percentage">${formatPercent(ratio)}</span>
+              </div>
+              <div class="quota-p-card__detail">
+                <div class="quota-p-card__detail-emphasis"><span>剩余额度</span><strong>${formatNumber(remain)}</strong></div>
+                <div><span>采购额度</span><strong>${formatNumber(q.quota)}</strong></div>
+              </div>
+              <div class="quota-p-card__progress-wrap">
+                <progress class="quota-p-card__progress-native" max="100" value="${Math.min(100, Math.round(ratio * 100))}"></progress>
+              </div>
+              ${pushBlock}
+            </article>
+          `;
+        })
+        .join("");
+    }
+
+    function renderCostModule() {
+      const rows = aggregateRows(costData, appState.costTimeDim, appState.costSplit, "cost");
+      sortRows(rows, "cost");
+      const body = document.getElementById("costTableBody");
+      body.innerHTML = rows.map((r) => {
+        const saving = r.humanCost - r.aiCost;
+        const savingRatio = saving / r.humanCost;
+        const roi = (saving - r.aiCost) / r.aiCost;
+        return `
+          <tr class="${roi < 0 ? "danger" : roi < 0.4 ? "warn" : ""}">
+            <td>${r.period}</td>
+            <td>${r.project}</td>
+            <td>${r.product}</td>
+            <td>${formatNumber(r.humanCost)}</td>
+            <td>${formatNumber(r.aiCost)}</td>
+            <td>${formatNumber(saving)}</td>
+            <td>${formatPercent(savingRatio)}</td>
+            <td>${formatPercent(roi)}</td>
+          </tr>
+        `;
+      }).join("");
+      document.getElementById("copyCostBtn").onclick = () => {
+        const text = rows.map((r) => `${r.period}\t${r.project}\t${r.product}\t${r.humanCost}\t${r.aiCost}`).join("\n");
+        copyText("时间\t项目\tAI产品\t传统人力成本\tAI成本\n" + text);
+      };
+
+      const totalHuman = rows.reduce((s, r) => s + r.humanCost, 0);
+      const totalAi = rows.reduce((s, r) => s + r.aiCost, 0);
+      const totalSaving = totalHuman - totalAi;
+      const totalRoi = (totalSaving - totalAi) / totalAi;
+      document.getElementById("kpiPanel").innerHTML = `
+        <div class="kpi"><div class="label">AI 成本总计</div><div class="value">${formatNumber(totalAi)}</div></div>
+        <div class="kpi"><div class="label">传统人力成本总计</div><div class="value">${formatNumber(totalHuman)}</div></div>
+        <div class="kpi"><div class="label">成本节省</div><div class="value">${formatNumber(totalSaving)}</div></div>
+        <div class="kpi"><div class="label">综合 ROI</div><div class="value">${formatPercent(totalRoi)}</div></div>
+      `;
+    }
+
+    function getBadgeClass(status) {
+      if (status === "Pass" || status === "完成") return "status-pass";
+      if (status === "推进中") return "status-progress";
+      return "status-pending";
+    }
+
+    function renderProcurementTable() {
+      const stageOptions = ["Pass", "Pending", "推进中", "完成"];
+      const body = document.getElementById("procTableBody");
+      body.innerHTML = procurementData.map((p, rowIdx) => {
+        const stageTds = p.stages.map((s, colIdx) => {
+          const options = stageOptions.map((op) => `<option value="${op}" ${op === s ? "selected" : ""}>${op}</option>`).join("");
+          return `<td><select data-row="${rowIdx}" data-col="${colIdx}" class="proc-stage">${options}</select></td>`;
+        }).join("");
+        return `
+          <tr>
+            <td>${p.product}</td>
+            ${stageTds}
+            <td><input data-owner-row="${rowIdx}" value="${p.owner}" /></td>
+            <td><span class="status-badge ${getBadgeClass(p.stages[0])}">${p.updatedAt}</span></td>
+          </tr>
+        `;
+      }).join("");
+
+      document.querySelectorAll(".proc-stage").forEach((el) => {
+        el.addEventListener("change", (e) => {
+          const r = Number(e.target.dataset.row);
+          const c = Number(e.target.dataset.col);
+          procurementData[r].stages[c] = e.target.value;
+          procurementData[r].updatedAt = "2026-03-25 12:00";
+          renderProcurementTable();
+        });
+      });
+      document.querySelectorAll("[data-owner-row]").forEach((el) => {
+        el.addEventListener("change", (e) => {
+          const r = Number(e.target.dataset.ownerRow);
+          procurementData[r].owner = e.target.value;
+          procurementData[r].updatedAt = "2026-03-25 12:00";
+          renderProcurementTable();
+        });
+      });
+      document.getElementById("copyProcBtn").onclick = () => {
+        const lines = procurementData.map((p) => `${p.product}\t${p.stages.join(" | ")}\t${p.owner}\t${p.updatedAt}`);
+        copyText("产品\t阶段状态\t负责人\t更新时间\n" + lines.join("\n"));
+      };
+    }
+
+    function renderGranularityControl() {
+      const wrap = document.getElementById("granularityGroup");
+      wrap.innerHTML = granularityOptions.map((op) => `
+        <label>
+          <input type="radio" name="usageGranularity" value="${op.value}" ${op.value === appState.usageGranularity ? "checked" : ""} />
+          <span>${op.label}</span>
+        </label>
+      `).join("");
+      wrap.querySelectorAll("input[name='usageGranularity']").forEach((el) => {
+        el.addEventListener("change", (e) => {
+          appState.usageGranularity = e.target.value;
+          renderUsageTable();
+        });
+      });
+    }
+
+    /** 多选框收起态：已选项显示在 summary 内，过长单行省略；悬停 summary 可看完整列表（原生 title） */
+    function updateMultiSelectSummary(summaryId, textId, badgeId, values, placeholder) {
+      const summaryEl = document.getElementById(summaryId);
+      const textEl = document.getElementById(textId);
+      const badgeEl = document.getElementById(badgeId);
+      if (!summaryEl || !textEl || !badgeEl) return;
+      if (!values.length) {
+        textEl.textContent = placeholder;
+        textEl.classList.add("placeholder");
+        badgeEl.hidden = true;
+        summaryEl.removeAttribute("title");
+        return;
+      }
+      const joined = values.join("，");
+      textEl.textContent = joined;
+      textEl.classList.remove("placeholder");
+      summaryEl.title = joined;
+      if (values.length > 1) {
+        badgeEl.textContent = `${values.length} 项`;
+        badgeEl.hidden = false;
+      } else {
+        badgeEl.hidden = true;
+      }
+    }
+
+    function renderProjectOptions() {
+      const wrap = document.getElementById("projectOptions");
+      wrap.innerHTML = projectGroupOptions.map((op) => `
+        <label class="option-item ${appState.selectedProjectGroups.includes(op) ? "selected" : ""}">
+          <input type="checkbox" value="${op}" ${appState.selectedProjectGroups.includes(op) ? "checked" : ""} />
+          <span class="option-check">${appState.selectedProjectGroups.includes(op) ? "✓" : ""}</span>
+          <span class="option-label">${op}</span>
+        </label>
+      `).join("");
+      wrap.querySelectorAll("input[type='checkbox']").forEach((el) => {
+        el.addEventListener("change", (e) => {
+          const v = e.target.value;
+          if (e.target.checked) {
+            if (!appState.selectedProjectGroups.includes(v)) appState.selectedProjectGroups.push(v);
+          } else {
+            appState.selectedProjectGroups = appState.selectedProjectGroups.filter((x) => x !== v);
+          }
+          updateMultiSelectSummary(
+            "projectSummary",
+            "projectSummaryText",
+            "projectSummaryBadge",
+            appState.selectedProjectGroups,
+            "请选择项目组"
+          );
+          pruneSelectedSubTeams();
+          renderSubTeamOptions();
+          renderUsageTable();
+        });
+      });
+      updateMultiSelectSummary(
+        "projectSummary",
+        "projectSummaryText",
+        "projectSummaryBadge",
+        appState.selectedProjectGroups,
+        "请选择项目组"
+      );
+      pruneSelectedSubTeams();
+      renderSubTeamOptions();
+    }
+
+    function renderSubTeamOptions() {
+      const avail = getAvailableSubTeams();
+      const wrap = document.getElementById("subTeamOptions");
+      wrap.innerHTML = avail.map((op) => `
+        <label class="option-item ${appState.selectedSubTeams.includes(op) ? "selected" : ""}">
+          <input type="checkbox" value="${op}" ${appState.selectedSubTeams.includes(op) ? "checked" : ""} />
+          <span class="option-check">${appState.selectedSubTeams.includes(op) ? "✓" : ""}</span>
+          <span class="option-label">${op}</span>
+        </label>
+      `).join("");
+      wrap.querySelectorAll("input[type='checkbox']").forEach((el) => {
+        el.addEventListener("change", (e) => {
+          const v = e.target.value;
+          if (e.target.checked) {
+            if (!appState.selectedSubTeams.includes(v)) appState.selectedSubTeams.push(v);
+          } else {
+            appState.selectedSubTeams = appState.selectedSubTeams.filter((x) => x !== v);
+          }
+          updateMultiSelectSummary(
+            "subTeamSummary",
+            "subTeamSummaryText",
+            "subTeamSummaryBadge",
+            appState.selectedSubTeams,
+            "请选择子团队"
+          );
+          renderUsageTable();
+        });
+      });
+      updateMultiSelectSummary(
+        "subTeamSummary",
+        "subTeamSummaryText",
+        "subTeamSummaryBadge",
+        appState.selectedSubTeams,
+        "请选择子团队"
+      );
+    }
+
+    function renderProductOptions() {
+      const search = appState.productSearch.trim().toLowerCase();
+      const shown = aiProductOptions.filter((op) => op.toLowerCase().includes(search));
+      const wrap = document.getElementById("productOptions");
+      wrap.innerHTML = shown.map((op) => `
+        <label class="option-item ${appState.selectedProducts.includes(op) ? "selected" : ""}">
+          <input type="checkbox" value="${op}" ${appState.selectedProducts.includes(op) ? "checked" : ""} />
+          <span class="option-check">${appState.selectedProducts.includes(op) ? "✓" : ""}</span>
+          <span class="option-label">${op}</span>
+        </label>
+      `).join("");
+      wrap.querySelectorAll("input[type='checkbox']").forEach((el) => {
+        el.addEventListener("change", (e) => {
+          const v = e.target.value;
+          if (e.target.checked) {
+            if (!appState.selectedProducts.includes(v)) appState.selectedProducts.push(v);
+          } else {
+            appState.selectedProducts = appState.selectedProducts.filter((x) => x !== v);
+          }
+          updateMultiSelectSummary(
+            "productSummary",
+            "productSummaryText",
+            "productSummaryBadge",
+            appState.selectedProducts,
+            "请选择AI产品"
+          );
+          renderUsageTable();
+        });
+      });
+      updateMultiSelectSummary(
+        "productSummary",
+        "productSummaryText",
+        "productSummaryBadge",
+        appState.selectedProducts,
+        "请选择AI产品"
+      );
+    }
+
+    function syncRangeText() {
+      const textEl = document.getElementById("usageTimeRangeText");
+      if (!appState.usageRangeStart || !appState.usageRangeEnd) {
+        textEl.value = "";
+        return;
+      }
+      textEl.value = `${formatDateTime(appState.usageRangeStart)} - ${formatDateTime(appState.usageRangeEnd)}`;
+      document.getElementById("usageRangeStart").value = formatForInput(appState.usageRangeStart);
+      document.getElementById("usageRangeEnd").value = formatForInput(appState.usageRangeEnd);
+    }
+
+    function bindControls() {
+      const now = new Date("2026-03-27T23:59:59");
+      const start = new Date("2025-10-01T00:00:00");
+      appState.usageRangeStart = start;
+      appState.usageRangeEnd = now;
+      appState.selectedProjectGroups = [...projectGroupOptions];
+      appState.selectedProducts = [...aiProductOptions];
+      appState.selectedSubTeams = getAvailableSubTeams();
+      syncRangeText();
+      renderGranularityControl();
+      renderProjectOptions();
+      renderProductOptions();
+
+      document.getElementById("quotaCardGrid").addEventListener("click", (e) => {
+        const pushBtn = e.target.closest("[data-quota-push]");
+        if (pushBtn) {
+          const product = pushBtn.getAttribute("data-product") || "";
+          alert(`已触发推送提醒（示例）：「${product}」额度预警将推送给订阅人 / 值班群。`);
+        }
+      });
+
+      document.querySelectorAll("input[name='usageViewMode']").forEach((el) => {
+        el.addEventListener("change", (e) => {
+          if (!e.target.checked) return;
+          appState.usageViewMode = e.target.value;
+          renderUsageTable();
+        });
+      });
+
+      document.getElementById("usageShowSubTeamsCheckbox").addEventListener("change", (e) => {
+        appState.usageShowSubTeams = e.target.checked;
+        if (appState.usageShowSubTeams) appState.usageExpandAllOnNextRender = true;
+        else appState.usageExpandedParentKeys = [];
+        renderUsageTable();
+      });
+
+      document.getElementById("usageMainTable").addEventListener("click", (e) => {
+        const tgl = e.target.closest("[data-usage-toggle]");
+        if (tgl) {
+          e.preventDefault();
+          const k = decodeURIComponent(tgl.getAttribute("data-usage-toggle") || "");
+          const next = new Set(appState.usageExpandedParentKeys);
+          if (next.has(k)) next.delete(k);
+          else next.add(k);
+          appState.usageExpandedParentKeys = [...next];
+          renderUsageTable();
+          return;
+        }
+        const th = e.target.closest("th.sortable[data-table='usage']");
+        if (!th) return;
+        const key = th.dataset.key;
+        const sort = appState.sorting.usage;
+        if (sort.key === key) sort.dir = sort.dir === "asc" ? "desc" : "asc";
+        else {
+          sort.key = key;
+          sort.dir = "asc";
+        }
+        renderUsageTable();
+      });
+
+      const rangePanel = document.getElementById("usageRangePanel");
+      const rangeText = document.getElementById("usageTimeRangeText");
+      rangeText.addEventListener("click", () => rangePanel.classList.add("open"));
+      rangeText.addEventListener("blur", () => {
+        const parsed = parseRangeText(rangeText.value.trim());
+        if (parsed) {
+          appState.usageRangeStart = parsed.start;
+          appState.usageRangeEnd = parsed.end;
+          syncRangeText();
+          renderUsageTable();
+        }
+      });
+      document.getElementById("applyRangeBtn").addEventListener("click", () => {
+        const s = document.getElementById("usageRangeStart").value;
+        const e = document.getElementById("usageRangeEnd").value;
+        const startDate = s ? new Date(s) : null;
+        const endDate = e ? new Date(e) : null;
+        if (!startDate || !endDate || startDate > endDate) {
+          alert("请选择有效的开始/结束时间");
+          return;
+        }
+        appState.usageRangeStart = startDate;
+        appState.usageRangeEnd = endDate;
+        syncRangeText();
+        renderUsageTable();
+        rangePanel.classList.remove("open");
+      });
+      document.getElementById("clearRangeBtn").addEventListener("click", () => {
+        appState.usageRangeStart = null;
+        appState.usageRangeEnd = null;
+        syncRangeText();
+        renderUsageTable();
+        rangePanel.classList.remove("open");
+      });
+      document.addEventListener("click", (e) => {
+        const inWrap = e.target.closest(".range-wrap");
+        if (!inWrap) rangePanel.classList.remove("open");
+      });
+
+      document.getElementById("projectSelectAllBtn").addEventListener("click", () => {
+        appState.selectedProjectGroups = [...projectGroupOptions];
+        renderProjectOptions();
+        renderUsageTable();
+      });
+      document.getElementById("projectClearBtn").addEventListener("click", () => {
+        appState.selectedProjectGroups = [];
+        renderProjectOptions();
+        renderUsageTable();
+      });
+      document.getElementById("subTeamSelectAllBtn").addEventListener("click", () => {
+        appState.selectedSubTeams = [...getAvailableSubTeams()];
+        renderSubTeamOptions();
+        renderUsageTable();
+      });
+      document.getElementById("subTeamClearBtn").addEventListener("click", () => {
+        appState.selectedSubTeams = [];
+        renderSubTeamOptions();
+        renderUsageTable();
+      });
+      document.getElementById("productSearch").addEventListener("input", (e) => {
+        appState.productSearch = e.target.value;
+        renderProductOptions();
+      });
+      document.getElementById("productSelectAllBtn").addEventListener("click", () => {
+        const shown = aiProductOptions.filter((op) => op.toLowerCase().includes(appState.productSearch.trim().toLowerCase()));
+        appState.selectedProducts = Array.from(new Set([...appState.selectedProducts, ...shown]));
+        renderProductOptions();
+        renderUsageTable();
+      });
+      document.getElementById("productClearBtn").addEventListener("click", () => {
+        appState.selectedProducts = [];
+        renderProductOptions();
+        renderUsageTable();
+      });
+
+      selectWithOptions("costTimeDim", dims, appState.costTimeDim).onchange = (e) => {
+        appState.costTimeDim = e.target.value;
+        renderCostModule();
+      };
+      selectWithOptions("costSplit", splitDims, appState.costSplit).onchange = (e) => {
+        appState.costSplit = e.target.value;
+        renderCostModule();
+      };
+      document.querySelectorAll("#costModule th.sortable").forEach((th) => {
+        th.addEventListener("click", () => {
+          const table = th.dataset.table;
+          const key = th.dataset.key;
+          const sort = appState.sorting[table];
+          if (sort.key === key) sort.dir = sort.dir === "asc" ? "desc" : "asc";
+          else { sort.key = key; sort.dir = "asc"; }
+          renderCostModule();
+        });
+      });
+    }
+
+    function render() {
+      renderUsageTable();
+      renderQuotaCards();
+      renderCostModule();
+      renderProcurementTable();
+    }
+
+    bindControls();
+    render();
+  </script>
+</body>
+</html>
